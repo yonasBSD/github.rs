@@ -4,7 +4,7 @@ SPDX-FileCopyrightText: 2025, 2026 yonasBSD
 SPDX-License-Identifier: MIT
 -->
 
-# Rust CI with GitHub Actions
+# github-rs
 
 ![Linting workflow](https://github.com/yonasBSD/github-rs/actions/workflows/lint.yaml/badge.svg)
 ![testing workflow](https://github.com/yonasBSD/github-rs/actions/workflows/test-with-coverage.yaml/badge.svg)
@@ -30,127 +30,180 @@ SPDX-License-Identifier: MIT
 
 <!--[![Matrix Chat](https://img.shields.io/matrix/vaultwarden:matrix.org.svg?logo=matrix)](https://matrix.to/#/#vaultwarden:matrix.org)-->
 
-## Table of Contents
+A powerful Rust CLI tool to automatically update all your forked GitHub repositories, keeping them in sync with their upstream sources.
 
-1. [Workflows](#workflows)
-   - [Check and Lint (check-and-lint.yaml)](#check-and-lint)
-   - [Test with Code Coverage (test-with-coverage.yaml)](#test-with-code-coverage)
-   - [Release Packaging (release-packaging.yaml)](#release-packaging)
-2. [How to Use](#how-to-use)
+---
 
-## Workflows
+## 🎯 Overview
 
-The CI process is separated into 3 workflows: Check and Lint, Test, and Release Packaging.
+When you fork repositories on GitHub, they quickly become out of date as the upstream repositories receive new commits. `github-rs` solves this problem by automatically synchronizing all your forks with their upstream repositories, helping you maintain up-to-date copies and reduce merge conflicts.
 
-All jobs run on `ubuntu-latest`, and are run in parallel.
+## ✨ Features
 
-All jobs use [actions/checkout](https://github.com/actions/checkout) and [actions-rs/toolchain](https://github.com/actions-rs/toolchain).
+- **Bulk Fork Updates**: Automatically update all your forked repositories in one command
+- **Smart Synchronization**: Keeps your forks in sync with upstream changes
+- **Conflict Detection**: Identifies potential merge conflicts before they become problems
+- **Fast Performance**: Built in Rust for speed and reliability
+- **GitHub API Integration**: Seamlessly integrates with GitHub's API
+- **Minimal Configuration**: Simple setup with GitHub token authentication
 
-<a name="check-and-lint"></a>
+## 📦 Installation
 
-### Check and Lint (check-and-lint.yaml)
+### From Source
 
-This workflow checks for compiler errors and code style inconsistencies.
+```bash
+git clone https://github.com/yonasBSD/github-rs.git
+cd github-rs
+cargo build --release
+```
 
-It runs on pull requests and main branch push.
+The binary will be available at `target/release/github-rs`.
 
-#### 📋 Check job
+### Using Cargo
 
-This job runs `cargo check` on the stable toolchain.
+```bash
+cargo install --git https://github.com/yonasBSD/github-rs.git
+```
 
-It checks if there are compiler errors.
+## 🚀 Quick Start
 
-#### 📋 Rustfmt job
+1. **Generate a GitHub Personal Access Token**
+   
+   Create a token with `repo` scope at: https://github.com/settings/tokens
 
-This job runs [rustfmt](https://github.com/rust-lang/rustfmt) with the `--check` option through `cargo fmt` on the stable toolchain.
+2. **Set Up Authentication**
 
-By default, it checks inconsistencies with the [Rust style guide](https://github.com/rust-lang-nursery/fmt-rfcs/blob/master/guide/guide.md).
-You can add a `rustfmt.toml` or `.rustfmt.toml` to configure the style.
+   ```bash
+   export GITHUB_TOKEN="your_token_here"
+   ```
 
-#### 📋 Clippy job
+3. **Run the Tool**
 
-This job runs [clippy](https://github.com/rust-lang/rust-clippy) on the stable toolchain through [actions-rs/clippy-check@v1](https://github.com/actions-rs/clippy-check).
+   ```bash
+   github-rs
+   ```
 
-You can add a `clippy.toml` or `.clippy.toml` to configure the style.
+   This will scan all your forked repositories and update them with the latest changes from their upstream sources.
 
-- The action outputs result (**Clippy Output** added to a random workflow), and
-- For pull requests, it adds annotations on the diff.
+## 💻 Usage
 
-### Test with Code Coverage (test-with-coverage.yaml)
+### Basic Usage
 
-This workflow run tests, outputs test results, publishes code coverage results on [CodeCov](https://codecov.io/).
-Publishing test results and code coverage data is in one job to avoid running the tests twice.
-It runs on pull requests and main branch push.
+Update all your forked repositories:
 
-#### 📋 Test job
+```bash
+github-rs
+```
 
-This job:
+### Command Line Options
 
-1. Caches dependencies,
-2. Runs tests and generate test results and code coverage data,
-3. Uploads test results, and
-4. Uploads to CodeCov.
+```bash
+github-rs [OPTIONS]
 
-Environment variables used in this job:
+Options:
+  -h, --help           Print help information
+  -V, --version        Print version information
+```
 
-- `PROJECT_NAME_UNDERSCORE` - project name with hyphens(-) as underscores(\_) needed for code coverage
-- `CARGO_INCREMENTAL`, `RUSTFLAGS`, `RUSTDOCFLAGS` - added to `CARGO_OPTIONS` in cargo test needed for code coverage
+## 🔧 Configuration
 
-Steps:
+### Environment Variables
 
-1. Cache dependencies.
-   It caches download and compilation of dependencies based on a hash of Cargo.lock to shorten build time
-   with [actions/cache@v2](https://github.com/actions/cache).
-   - The key is `${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('Cargo.lock') }}`
-     where `env.cache-name`: `cache-dependencies`.
-   - Cache is stored at the end of the job on cache miss. Cache is not updated on cache hit.
+- `GITHUB_TOKEN` - Your GitHub personal access token (required)
+- `GITHUB_USER` - Your GitHub username (optional, auto-detected from token)
 
-2. Generate test results and code coverage data.
-   1. It installs [cargo2junit](https://github.com/johnterickson/cargo2junit) needed for formatting the test result and [grcov](https://github.com/mozilla/grcov) for code coverage.
-   2. It runs `cargo test` in the nightly toolchain.
-   - `$CARGO_OPTIONS` includes `CARGO_INCREMENTAL`, `RUSTFLAGS`, and `RUSTDOCFLAGS` options needed for code coverage.
-   - `-Z unstable-options --format json` formats the test result into json.
-   - ` | cargo2junit > results.xml` converts the json result into junit format for `EnricoMi/publish-unit-test-result-action` to understand and saves it as `results.xml`.
-   4. It generates code coverage data in lcov format through `grcov` saved as `lcov.info`.
+### Token Permissions
 
-3. Upload test results.
-   It uploads the test result (`results.xml`) through [EnricoMi/publish-unit-test-result-action@v1](https://github.com/EnricoMi/publish-unit-test-result-action).
-   - The action outputs the test result (**Test Results** added to a random workflow).
-   - For pull requests, the action adds a comment containing the test results.
+Your GitHub token needs the following scopes:
+- `repo` - Full control of private repositories
+- `workflow` - Update GitHub Action workflows (if needed)
 
-4. Upload to CodeCov.
-   It uploads the code coverage result (`lcov.info`) to CodeCov through [codecov/codecov-action@v1](https://github.com/codecov/codecov-action).
-   - For pull requests, the actions adds a comment containing the code coverage report.
-   - For private repositories, add your token from CodeCov repository setting on GitHub Secrets and uncomment the line: `token: ${{ secrets.CODECOV_TOKEN }}`.
+## 🏗️ How It Works
 
-### Release Packaging (release-packaging.yaml)
+1. **Discovery**: Fetches all repositories you've forked on GitHub
+2. **Analysis**: Identifies which forks are behind their upstream repositories
+3. **Synchronization**: Merges upstream changes into your fork's default branch
+4. **Report**: Provides a summary of updated repositories and any issues encountered
 
-This workflow builds the package in release mode and uploads resulting file as a GitHub artifact.
-It runs on main branch push.
+## 🤝 Contributing
 
-#### 📋 Release Packaging job
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
-This job builds the project in release mode and uploads the binary as an artifact through [actions/upload-artifact@v2](https://github.com/actions/upload-artifact).
+### Development Setup
 
-The binary `target/release/${{ env.PROJECT_NAME_UNDERSCORE }}` is uploaded as `${{ env.PROJECT_NAME_UNDERSCORE }}`.
+```bash
+# Clone the repository
+git clone https://github.com/yonasBSD/github-rs.git
+cd github-rs
 
-## How to Use
+# Install dependencies
+cargo build
 
-1. Replace the value of `PROJECT_NAME_UNDERSCORE` with your project name (replace hyphens(-) as underscores(\_)).
+# Run tests
+cargo test
 
-2. Customize when to call the workflows (like branch names)
+# Run with cargo
+cargo run
+```
 
-3. Customize options:
-   - Configure rustfmt and clippy with TOML files.
-   - Customize cargo test options (like excluding certain tests).
-   - Configure paths to upload from release build (like uploading multiple binary artifacts).
+### Running Tests
 
-Notes:
+```bash
+# Run all tests
+cargo test
 
-- `secrets.GITHUB_TOKEN` is needed by some actions to create GitHub checks & annotations. it is added automatically by GitHub.
-- uses cache for GitHub actions.
-- clippy html output and test result output are added to random workflows for a certain commit due to limitations in the GitHub Actions API.
+# Run tests with coverage
+cargo test --all-features
 
-## Repo Activity
+# Run linting
+cargo clippy -- -D warnings
 
-![Alt](https://repobeats.axiom.co/api/embed/a6d7cdb3696aab81174ef5054ae1229f70ed2134.svg "Repobeats analytics image")
+# Format code
+cargo fmt
+```
+
+## 📋 Requirements
+
+- Rust 1.70.0 or higher
+- GitHub Personal Access Token with appropriate permissions
+- Active internet connection
+
+## 🔒 Security
+
+- Never commit your GitHub token to version control
+- Use environment variables or secure credential managers
+- Review the [Security Policy](SECURITY.md) for reporting vulnerabilities
+
+## 📄 License
+
+This project is licensed under the terms specified in [LICENSE.md](LICENSE.md).
+
+## 🙏 Acknowledgments
+
+- Generated from [yonasBSD/rust-ci-github-actions-workflow](https://github.com/yonasBSD/rust-ci-github-actions-workflow)
+- Built with the power of Rust 🦀
+- Inspired by the need to keep countless forks synchronized
+
+## 📊 Project Status
+
+This project is actively maintained. Check the [Issues](https://github.com/yonasBSD/github-rs/issues) page for known problems and feature requests.
+
+## 🔗 Related Projects
+
+- [hub](https://hub.github.com/) - GitHub CLI wrapper
+- [gh](https://cli.github.com/) - Official GitHub CLI
+- [git-sync](https://github.com/kubernetes/git-sync) - Keep Git repos in sync
+
+## 📞 Support
+
+- 🐛 [Report a Bug](https://github.com/yonasBSD/github-rs/issues/new)
+- 💡 [Request a Feature](https://github.com/yonasBSD/github-rs/issues/new)
+- 📖 [Documentation](https://github.com/yonasBSD/github-rs)
+
+## 📈 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a list of changes and version history.
+
+---
+
+**Note**: This tool modifies your GitHub repositories. Always review changes before pushing to production environments. Consider testing on non-critical forks first.
