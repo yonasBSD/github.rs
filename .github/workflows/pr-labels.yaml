@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 yonasBSD
+#
+# SPDX-License-Identifier: MIT
+
 name: PR Labels
 
 on:
