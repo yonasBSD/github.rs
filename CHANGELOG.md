@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2025 yonasBSD
+SPDX-FileCopyrightText: 2025, 2026 yonasBSD
 
 SPDX-License-Identifier: MIT
 -->

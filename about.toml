@@ -1,5 +1,8 @@
 # SPDX-FileCopyrightText: 2024 Christina Sørensen
+# SPDX-FileCopyrightText: 2026 yonasBSD
+#
 # SPDX-License-Identifier: EUPL-1.2
+# SPDX-License-Identifier: MIT
 accepted = [
   "MIT",
   "Apache-2.0",

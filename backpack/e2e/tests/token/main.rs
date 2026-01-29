@@ -1,5 +1,6 @@
+// SPDX-FileCopyrightText: 2025, 2026 yonasBSD
+//
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2025 yonasBSD
 
 use cucumber::{World as _, given, then, when};
 use github_rs_lib::get_repos;

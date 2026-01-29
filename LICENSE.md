@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 yonasBSD
+
+SPDX-License-Identifier: MIT
+-->
+
 MIT License
 
 Copyright (c) 2021 BamPeers
