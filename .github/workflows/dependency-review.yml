@@ -1,19 +1,20 @@
-name: Changelog
-
-on:
-  push:
-    tags:
-      - "v*.*.*"
+# Dependency Review Action
+#
+# This Action will scan dependency manifest files that change as part of a Pull Request,
+# surfacing known-vulnerable versions of the packages declared or updated in the PR.
+# Once installed, if the workflow run is marked as required,
+# PRs introducing known-vulnerable packages will be blocked from merging.
+#
+# Source repository: https://github.com/actions/dependency-review-action
+name: 'Dependency Review'
+on: [pull_request]
 
 permissions:
   contents: read
 
 jobs:
-  changelog:
-    name: Generate and publish changelog
+  dependency-review:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
@@ -34,29 +35,9 @@ jobs:
             objects.githubusercontent.com:443
             static.rust-lang.org:443
             index.crates.io:443
+            api.securityscorecards.dev:443
 
-      - name: Checkout
+      - name: 'Checkout Repository'
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Generate a changelog
-        uses: orhun/git-cliff-action@e16f179f0be49ecdfe63753837f20b9531642772 # v4.7.0
-        id: git-cliff
-        with:
-          config: cliff.toml
-          args: --verbose --latest --strip header
-        env:
-          OUTPUT: CHANGES.md
-          GITHUB_REPO: ${{ github.repository }}
-
-      - name: Polish changelog
-        shell: bash
-        run: sed -i '1,2d' CHANGES.md
-
-      - name: Upload the changelog
-        uses: ncipollo/release-action@b7eabc95ff50cbeeedec83973935c8f306dfcd0b # v1.20.0
-        with:
-          # draft: true
-          allowUpdates: true
-          bodyFile: CHANGES.md
+      - name: 'Dependency Review'
+        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
