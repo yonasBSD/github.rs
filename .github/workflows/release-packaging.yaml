@@ -1,134 +1,171 @@
-# SPDX-FileCopyrightText: 2025 yonasBSD
-#
-# SPDX-License-Identifier: MIT
+name: Release Packaging
 
 on:
   push:
     tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
-
-name: Release Packaging
+      - 'v*'
 
 permissions:
   contents: write
-  id-token: write
+  id-token: write   # required for cosign + SLSA provenance
   attestations: write
-
-env:
-  CARGO_TERM_COLOR: always
-  SCCACHE_GHA_ENABLED: "true"
-  RUSTC_WRAPPER: "sccache"
 
 jobs:
   release:
-    name: Release Packaging
-    env:
-      PROJECT_NAME_UNDERSCORE: github-rs
-      PROJECT_TARGET: x86_64-unknown-linux-gnu
+    name: Linux Release
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v6
+      - name: Harden Runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.deps.dev:443
+            api.github.com:443
+            api.osv.dev:443
+            api.scorecard.dev:443
+            azure.archive.ubuntu.com:80
+            changelogs.ubuntu.com:443
+            esm.ubuntu.com:443
+            fulcio.sigstore.dev:443
+            get.anchore.io:443
+            github.com:443
+            gobinaries.com:443
+            index.crates.io:443
+            objects.githubusercontent.com:443
+            oss-fuzz-build-logs.storage.googleapis.com:443
+            packages.microsoft.com:443
+            raw.githubusercontent.com:443
+            rekor.sigstore.dev:443
+            release-assets.githubusercontent.com:443
+            security.ubuntu.com:80
+            static.crates.io:443
+            static.rust-lang.org:443
+            tuf-repo-cdn.sigstore.dev:443
+            uploads.github.com:443
+            www.bestpractices.dev:443
+            _http._tcp.azure.archive.ubuntu.com:443
+            _https._tcp.esm.ubuntu.com:443
+            _https._tcp.motd.ubuntu.com:443
+            _https._tcp.packages.microsoft.com:443
 
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@main
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Release Build
-        uses: yonasBSD/toolkit@main
+      # Setup Environment & Tools
+      - name: Install Toolchain & Utilities
+        run: |
+          sudo apt-get update && sudo apt-get install -y b3sum jq
+          curl -sfL https://gobinaries.com/goreleaser/nfpm | sh
+
+      - name: Install Sigstore Tools
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@deef08a0db64bfad603422135db61477b16cef56 # v0.22.1
+
+      - name: Set Project Metadata
+        run: |
+          # Extract crate name dynamically to handle any repo name
+          CRATE_NAME=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].name')
+          echo "PROJECT_BIN=$CRATE_NAME" >> $GITHUB_ENV
+          echo "PROJECT_NAME_UNDERSCORE=${CRATE_NAME//-/_}" >> $GITHUB_ENV
+
+      # Build & Package
+      - name: Build Reproducible Binary
+        uses: yonasBSD/toolkit@e3156a095eb4a759778ad8ef10dfd58dd00993e6 # v1.0.0
         with:
           run: |
-            cargo auditable build --release --package github-rs
+            # Set source date for reproducible builds
+            export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)
+            export CARGO_INCREMENTAL=0
+            cargo auditable build --release
 
-      - name: About Licenses
-        uses: yonasBSD/toolkit@main
-        with:
-          run: |
-            cargo about init
-            cargo about generate about.hbs --output-file licenses.html
+      - name: Prepare Packaging Environment
+        run: |
+          # Ensure packaging/scripts exists even if the repo doesn't use them
+          mkdir -p packaging/scripts
+          # Create empty shell scripts if they don't exist so NFPM doesn't throw a 'file not found' error
+          for s in preinstall.sh postinstall.sh preremove.sh postremove.sh; do
+            if [ ! -f "packaging/scripts/$s" ]; then
+              echo "#!/bin/sh" > "packaging/scripts/$s"
+              chmod +x "packaging/scripts/$s"
+            fi
+          done
 
-      - name: Set env
-        run: echo "NFPM_VERSION=$(curl -sL https://api.github.com/repos/goreleaser/nfpm/releases/latest | jq -r ".tag_name" | cut -d'v' -f2)" >> $GITHUB_ENV
+      # Get project details
+      - name: Set Project Metadata
+        run: |
+          # Extract metadata directly from Cargo.toml
+          METADATA=$(cargo metadata --no-deps --format-version 1)
 
-      - name: Create Packages
+          CRATE_NAME=$(echo $METADATA | jq -r '.packages[0].name')
+          DESC=$(echo $METADATA | jq -r '.packages[0].description')
+          LICE=$(echo $METADATA | jq -r '.packages[0].license')
+          # Grabs the first author from the list
+          MAINT=$(echo $METADATA | jq -r '.packages[0].authors[0]')
+
+          echo "PROJECT_BIN=$CRATE_NAME" >> $GITHUB_ENV
+          echo "PROJECT_NAME_UNDERSCORE=${CRATE_NAME//-/_}" >> $GITHUB_ENV
+          echo "PROJECT_DESC=$DESC" >> $GITHUB_ENV
+          echo "PROJECT_LICENSE=$LICE" >> $GITHUB_ENV
+          echo "PROJECT_MAINTAINER=$MAINT" >> $GITHUB_ENV
+
+      # Generate all packages
+      - name: Generate Packages (NFPM)
         env:
           VERSION: ${{ github.ref_name }}
+          MAINTAINER: ${{ env.PROJECT_MAINTAINER }}
+          DESCRIPTION: ${{ env.PROJECT_DESC }}
+          LICENSE: ${{ env.PROJECT_LICENSE }}
+          VENDOR: "yonasBSD"
+          HOMEPAGE: "${{ github.event.repository.html_url }}"
         run: |
-          wget https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_amd64.deb
-          sudo dpkg -i nfpm_${NFPM_VERSION}_amd64.deb
-          rm nfpm_${NFPM_VERSION}_amd64.deb
-          sed -i -E "s/^version:.+$/version: $VERSION/g" nfpm.yaml
-          mkdir scripts
-          touch foo bar scripts/postremove.sh scripts/preremove.sh scripts/preinstall.sh scripts/postinstall.sh changelog.yaml foobar.conf
+          # Clean 'v' from tag (v1.0.0 -> 1.0.0)
+          export VERSION=${VERSION#v}
+
           for pkg in deb apk archlinux rpm ipk; do
-             nfpm package -p $pkg
+            nfpm package --config packaging/nfpm/nfpm.yaml --packager $pkg
           done
-          cp target/release/${{ env.PROJECT_NAME_UNDERSCORE }} .
-          tar --zstd -cf ${{ env.PROJECT_NAME_UNDERSCORE }}_${{ env.PROJECT_TARGET }}.tzst ${{ env.PROJECT_NAME_UNDERSCORE }}
 
-      - name: Sign Packages
-        uses: yonasBSD/toolkit@main
-        env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+      # Security, Checksums, and Signatures
+      - name: Generate SBOMs, Checksums, and Signatures
+        run: |
+          # Generate BLAKE3 checksums for all artifacts
+          b3sum *.deb *.apk *.ipk *.rpm *.zst > checksums-blake3.txt
+
+          # Loop through artifacts to generate SBOMs and Cosign signatures
+          for f in *.deb *.apk *.ipk *.rpm *.zst; do
+            syft "$f" -o spdx-json="sbom-$f.spdx.json"
+            cosign sign-blob --yes --output-signature "$f.sig" "$f"
+          done
+
+      # Attestations (GitHub Native Security)
+      - name: Attest SBOMs
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
         with:
-          run: |
-            echo "$SIGNING_KEY" > signing.key
-            for file in `find . -name '*.deb' -or -name '*.apk' -or -name '*.ipk' -or -name '*.rpm' -or -name '*.zst' -or -name '*.html'`; do rsign sign -W -s signing.key -x $file.sig $file ; done
-            rsign sign -W -s signing.key -x ${{ env.PROJECT_NAME_UNDERSCORE }}_${{ env.PROJECT_TARGET }}.tzst.sig ${{ env.PROJECT_NAME_UNDERSCORE }}_${{ env.PROJECT_TARGET }}.tzst
+          sbom-path: 'sbom-*.spdx.json'
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v6
-        id: artifact-upload-step
-        with:
-          name: ${{ env.PROJECT_NAME_UNDERSCORE }}
-          path: |
-            ${{ env.PROJECT_NAME_UNDERSCORE }}_${{ env.PROJECT_TARGET }}.tzst
-            *.deb
-            *.apk
-            *.ipk
-            *.rpm
-            *.zst
-            *.html
-            *.sig
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ env.PROJECT_NAME_UNDERSCORE }}_${{ env.PROJECT_TARGET }}.tzst
-            *.deb
-            *.apk
-            *.ipk
-            *.rpm
-            *.zst
-            *.html
-            *.sig
-
-      # Waiting on https://github.com/anchore/sbom-action/issues/117
-      - name: Upload SBOM
-        uses: anchore/sbom-action@v0
-        env:
-          SYFT_EXCLUDE: ./target
-
-      - name: Upload Provenance Attestations
-        uses: actions/attest-build-provenance@v3
+      - name: Generate SLSA Level 3 Provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-path: |
-            ${{ env.PROJECT_NAME_UNDERSCORE }}_${{ env.PROJECT_TARGET }}.tzst
             *.deb
             *.apk
             *.ipk
             *.rpm
             *.zst
-            *.html
+
+      # Publication
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          files: |
+            *.deb
+            *.apk
+            *.ipk
+            *.rpm
+            *.zst
             *.sig
-
-    #- name: Output artifact ID
-    #  run:  echo 'Artifact ID is ${{ steps.artifact-upload-step.outputs.artifact-id }}'
-
-    #  - name: Create Release
-    #    env:
-    #      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #      tag: ${{ github.ref_name }}
-    #       gh release create "$tag" \
-    #         --repo="$GITHUB_REPOSITORY" \
-    #         --title="${tag#v}" \
-    #         --generate-notes
+            sbom-*.spdx.json
+            checksums-blake3.txt
