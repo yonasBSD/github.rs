@@ -1,0 +1,142 @@
+name: Issues Management
+
+# ✅ Features
+#
+# Auto-label job: Runs on issue opened/edited, applies needs-triage + prefix labels, auto‑creates labels with colors.
+# Label Cleanup job: Runs when issues are labeled, assigned, unassigned, or closed. Removes needs-triage once triaged or closed.
+# Stale job: Runs daily, marks issues as stale after 30 days, closes them after 7 more days, adds a stale label.
+# Scope limited to issues only: No pull request handling.
+# Added exempt-issue-labels: "bug,security" → any issue with bug or security labels will never be marked stale or auto‑closed.
+# Any issue with keep-open will never be marked stale or auto‑closed, regardless of inactivity.
+# This gives you three levels of control:
+#   Automatic lifecycle: triage + stale handling.
+#   Critical exemptions: bug and security issues stay open until resolved.
+#   Manual override: keep-open lets maintainers explicitly protect any issue.
+#   exempt-milestones: Issues assigned to milestones like Release 1.0 or Release 2.0 will never be marked stale or closed.
+# Combined exemptions:
+#   Label‑based: bug, security, keep-open.
+#   Milestone‑based: Release 1.0, Release 2.0.
+
+on:
+  issues:
+    types: [opened, edited, labeled, assigned, unassigned, closed]
+  schedule:
+    - cron: "0 0 * * *" # runs daily at midnight UTC
+
+jobs:
+  auto-label:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && (github.event.action == 'opened' || github.event.action == 'edited')
+    steps:
+      - name: Auto-label new issues
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const issueTitle = context.payload.issue.title.trim();
+            const labelsToAdd = [];
+
+            if (context.payload.action === 'opened') {
+              labelsToAdd.push("needs-triage");
+            }
+
+            const prefixMap = {
+              bug: /\[\s*bug\s*\]/ig,
+              feature: /\[\s*feature\s*\]/ig,
+              documentation: /\[\s*docs?\s*\]/ig,
+              security: /\[\s*security\s*\]/ig,
+              test: /\[\s*test\s*\]/ig,
+              support: /\[\s*support\s*\]/ig
+            };
+
+            let matched = false;
+            for (const [label, regex] of Object.entries(prefixMap)) {
+              if (regex.test(issueTitle)) {
+                labelsToAdd.push(label);
+                matched = true;
+              }
+            }
+
+            if (!matched) {
+              labelsToAdd.push("unclassified");
+            }
+
+            const labelColors = {
+              "needs-triage": "fbca04",
+              "bug": "d73a4a",
+              "feature": "0e8a16",
+              "documentation": "0366d6",
+              "security": "b60205",
+              "test": "5319e7",
+              "support": "c2e0c6",
+              "unclassified": "cccccc",
+              "keep-open": "ffffff" // manual override
+            };
+
+            for (const label of labelsToAdd) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label
+                });
+              } catch (error) {
+                if (error.status === 404) {
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: label,
+                    color: labelColors[label] || "ededed",
+                    description: `Auto-created label: ${label}`
+                  });
+                } else {
+                  throw error;
+                }
+              }
+            }
+
+            if (labelsToAdd.length > 0) {
+              await github.rest.issues.addLabels({
+                issue_number: context.payload.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: labelsToAdd
+              });
+            }
+
+  label-cleanup:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && (github.event.action == 'labeled' || github.event.action == 'assigned' || github.event.action == 'unassigned' || github.event.action == 'closed')
+    steps:
+      - name: Remove needs-triage if triaged or closed
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const hasNeedsTriage = issue.labels.some(l => l.name === "needs-triage");
+            const hasOtherLabels = issue.labels.some(l => l.name !== "needs-triage");
+            const hasAssignee = issue.assignees && issue.assignees.length > 0;
+            const isClosed = issue.state === "closed";
+
+            if (hasNeedsTriage && (hasOtherLabels || hasAssignee || isClosed)) {
+              await github.rest.issues.removeLabel({
+                issue_number: issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: "needs-triage"
+              });
+            }
+
+  stale:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/stale@v10
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          stale-issue-message: "This issue has been marked as stale due to 30 days of inactivity."
+          close-issue-message: "Closing this issue due to prolonged inactivity."
+          days-before-stale: 30
+          days-before-close: 7
+          stale-issue-label: "stale"
+          exempt-issue-labels: "bug,security,keep-open"
+          exempt-milestones: "Release 1.0,Release 2.0"

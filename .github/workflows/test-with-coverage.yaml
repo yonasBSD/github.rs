@@ -1,6 +1,4 @@
-# SPDX-FileCopyrightText: 2025 yonasBSD
-#
-# SPDX-License-Identifier: MIT
+name: Test with Code Coverage
 
 on:
   pull_request:
@@ -8,10 +6,8 @@ on:
     branches:
       - main
 
-name: Test with Code Coverage
-
 permissions:
-  contents: write
+  contents: read
   issues: read
   checks: write
   pull-requests: write
@@ -20,57 +16,49 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  e2e:
-    name: End-to-End Testing
+  test:
+    name: Test
     env:
-      PROJECT_NAME_UNDERSCORE: github-rs
+      PROJECT_NAME_UNDERSCORE: test2
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort
       RUSTDOCFLAGS: -Cpanic=abort
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@nightly
-
-      - name: Cache dependencies
-        uses: actions/cache@v5
-        env:
-          cache-name: cache-dependencies
+      - name: Harden Runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
         with:
-          path: |
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-            ~/.cargo/bin
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            target
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('Cargo.lock') }}
+          disable-sudo: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.deps.dev:443
+            api.github.com:443
+            api.osv.dev:443
+            api.scorecard.dev:443
+            fulcio.sigstore.dev:443
+            github.com:443
+            oss-fuzz-build-logs.storage.googleapis.com:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+            www.bestpractices.dev:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            static.rust-lang.org:443
+            static.crates.io:443
+            index.crates.io:443
+            just.systems:443
+            taskfile.dev:443
 
-      - name: Run BDD end-to-end tests
-        env:
-          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
-        run: |
-          cargo test --package github-rs-e2e -- --color=always
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-  coverage:
-    name: Code Coverage
-    env:
-      PROJECT_NAME_UNDERSCORE: github-rs
-      CARGO_INCREMENTAL: 0
-      RUSTFLAGS: -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort
-      RUSTDOCFLAGS: -Cpanic=abort
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
+          toolchain: nightly
           components: llvm-tools-preview
 
       - name: Cache dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         env:
           cache-name: cache-dependencies
         with:
@@ -78,42 +66,45 @@ jobs:
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
             ~/.cargo/bin
+            ~/.cargo/git
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
-            target
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('Cargo.lock') }}
 
-      - name: Install grcov, cargo-llvm-cov and nextest
-        uses: taiki-e/install-action@v2
+      # Cache target directory seperately to prevent cache invalidation of
+      # ~/.cargo when target changes
+      #- name: Cache target directory
+ # v5.0.2
+      #  env:
+      #    cache-name: cache-dependencies
+      #  with:
+      #    path: target
+      #    key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install grcov
+        uses: taiki-e/install-action@7e574ed8bb89811282a11aecb3fe1d043bf5bf0e # v2.67.15
         with:
-          tool: grcov,cargo-llvm-cov,nextest
+          tool: grcov,cargo-llvm-cov
 
-      - name: Set env
-        run: echo "CARGO2JUNIT_VERSION=$(curl -sL https://api.github.com/repos/yonasBSD/cargo2junit/releases/latest | jq -r ".tag_name" | cut -d'v' -f2)" >> $GITHUB_ENV
-
-      - name: Generate test result and coverage report
+      - name: Run tests
+        uses: yonasBSD/toolkit@e3156a095eb4a759778ad8ef10dfd58dd00993e6 # v1.0.0
         env:
-          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
-          NEXTEST_PROFILE: coverage # defined in .config/nextest.toml
-        run: |
-          wget https://github.com/yonasBSD/cargo2junit/releases/download/v${CARGO2JUNIT_VERSION}/cargo2junit_${CARGO2JUNIT_VERSION}_amd64.deb
-          sudo dpkg -i cargo2junit_${CARGO2JUNIT_VERSION}_amd64.deb
-          rm cargo2junit_${CARGO2JUNIT_VERSION}_amd64.deb
-          cargo clean
-          cargo test --package github-rs-lib $CARGO_OPTIONS -- -Z unstable-options --format json | cargo2junit > results.xml;
-          cargo llvm-cov nextest --package github-rs-lib --codecov --output-path ./codecov.json
-
-      # TODO: Only test the github-rs-lib package
-      - name: Run xtask coverage (grcov)
-        uses: actions-rs/cargo@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          command: xtask
-          args: coverage
+          run: |
+            task test
+
+      - name: Generate test results and coverage report
+        uses: yonasBSD/toolkit@e3156a095eb4a759778ad8ef10dfd58dd00993e6 # v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          run: |
+            cargo test ${CARGO_OPTIONS:+$CARGO_OPTIONS} -- -Z unstable-options --format json | cargo2junit > results.xml;
+            cargo llvm-cov --all-features --workspace --codecov --output-path ./codecov.json
 
       - name: Upload test results
-        uses: EnricoMi/publish-unit-test-result-action@v2
+        uses: EnricoMi/publish-unit-test-result-action@27d65e188ec43221b20d26de30f4892fad91df2f # v2.22.0
         with:
           check_name: Test Results
           github_token: ${{ secrets.GITHUB_TOKEN }}

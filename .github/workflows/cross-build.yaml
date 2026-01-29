@@ -1,47 +1,137 @@
-# SPDX-FileCopyrightText: 2025 yonasBSD
-#
-# SPDX-License-Identifier: MIT
+name: Cross Build
 
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
   workflow_run:
     workflows: ["Test with Code Coverage"]
     branches: [main]
-    types:
-      - completed
-
-name: Cross Build
-
-permissions:
-  contents: read
-  issues: read
-  checks: write
-  pull-requests: write
+    types: [completed]
 
 jobs:
   test:
-    name: Test Platforms
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: ${{ matrix.os.name }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [nightly]
-    runs-on: ${{ matrix.os }}
+        os:
+          # Native Runners
+          - { name: Ubuntu, runner: ubuntu-latest, type: native }
+          - { name: MacOS, runner: macos-latest, type: native }
+          - { name: Windows, runner: windows-latest, type: native }
+
+          # BSD VMs
+          - { name: FreeBSD, runner: ubuntu-latest, type: vm, action: "vmactions/freebsd-vm@v1", prepare: "pkg update -f; pkg install -y curl rust-nightly" }
+          - { name: OpenBSD, runner: ubuntu-latest, type: vm, action: "vmactions/openbsd-vm@v1", prepare: "pkg_add curl rust" }
+
+          # Linux Containers (New TODOs)
+          - { name: Fedora, runner: ubuntu-latest, type: container, image: "fedora:latest", pkg: "dnf install -y rust cargo" }
+          - { name: Rocky, runner: ubuntu-latest, type: container, image: "rockylinux:9", pkg: "dnf install -y rust cargo" }
+          - { name: OpenSUSE, runner: ubuntu-latest, type: container, image: "opensuse/tumbleweed", pkg: "zypper install -y rust cargo" }
+
+          # Specialized Linux
+          - { name: Alpine, runner: ubuntu-latest, type: alpine }
+          - { name: Arch, runner: ubuntu-latest, type: arch }
+          - { name: Slackware, runner: ubuntu-latest, type: vm, action: "vmactions/slackware-vm@v1", prepare: "slackpkg update && slackpkg install -y rust" }
+
+    runs-on: ${{ matrix.os.runner }}
+    container:
+      image: ${{ matrix.os.image }} # Only active when type is 'container'
+
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v6
-
-      - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
         with:
-          toolchain: ${{ matrix.rust }}
+          egress-policy: block
+          allowed-endpoints: >
+            api.deps.dev:443 api.github.com:443 api.osv.dev:443 api.scorecard.dev:443
+            github.com:443 objects.githubusercontent.com:443 raw.githubusercontent.com:443
+            static.rust-lang.org:443 static.crates.io:443 index.crates.io:443
+            *.ubuntu.com:80 *.ubuntu.com:443 packages.microsoft.com:443
+            *.freebsd.org:443 *.openbsd.org:443 *.netbsd.org:443
+            *.alpinelinux.org:443 *.archlinux.org:443 *.pkgbuild.com:443
+            *.fedoraproject.org:443 *.opensuse.org:443 *.rockylinux.org:443
+            slackware.osuosl.org:80 *.pool.ntp.org:443 time.cloudflare.com:443
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Checkout sources
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Run cargo test
-        env:
-          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
-        run: cargo test
+      # --- Logic for Native OS (Ubuntu, Mac, Windows) ---
+      - name: Install Rust (Native)
+        if: matrix.os.type == 'native'
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+
+      - name: Rust Cache (Native)
+        if: matrix.os.type == 'native'
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+
+      - name: Run Cargo Test (Native)
+        if: matrix.os.type == 'native'
+        run: cargo test --all-features
+
+      # --- Logic for Containers (Fedora, Rocky, OpenSUSE) ---
+      - name: Install Rust (Container)
+        if: matrix.os.type == 'container'
+        run: ${{ matrix.os.pkg }}
+
+      - name: Run tests (Container)
+        if: matrix.os.type == 'container'
+        run: cargo test --all-features
+
+      # --- Logic for VMs (BSDs, Slackware) ---
+      - name: Run Tests (FreeBSD)
+        if: matrix.os.name == 'FreeBSD'
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          sync: rsync
+          prepare: ${{ matrix.os.prepare }}
+          run: cargo test --all-features
+
+      - name: Run Tests (OpenBSD)
+        if: matrix.os.name == 'OpenBSD'
+        uses: vmactions/openbsd-vm@v1
+        with:
+          usesh: true
+          sync: rsync
+          prepare: ${{ matrix.os.prepare }}
+          run: cargo test --all-features
+
+      - name: Run Tests (Slackware)
+        if: matrix.os.name == 'Slackware'
+        uses: vmactions/slackware-vm@v1
+        with:
+          usesh: true
+          sync: rsync
+          prepare: ${{ matrix.os.prepare }}
+          run: cargo test --all-features
+
+      # --- Logic for Alpine ---
+      - name: Setup Alpine
+        if: matrix.os.type == 'alpine'
+        uses: jirutka/setup-alpine@ae3b3ddba35054804fc4a3507b519fa7e8152050 # v1
+        with:
+          branch: edge
+
+      - name: Run Alpine Tests
+        if: matrix.os.type == 'alpine'
+        run: apk add cargo && cargo test --all-features
+        shell: alpine.sh --root {0}
+
+      # --- Logic for Arch ---
+      - name: Setup Arch
+        if: matrix.os.type == 'arch'
+        uses: RangHo/setup-arch@19885eda0c0b0d1791e61e1d32f2552d42944b14 # main
+        with:
+          packages: "rust"
+
+      - name: Run Arch Tests
+        if: matrix.os.type == 'arch'
+        run: cargo test --all-features
