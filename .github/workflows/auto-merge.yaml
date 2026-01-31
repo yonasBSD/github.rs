@@ -15,6 +15,7 @@ permissions:
 jobs:
   dependabot:
     runs-on: ubuntu-latest
+    # Check if the PR is from dependabot
     if: github.actor == 'dependabot[bot]'  # zizmor: ignore[bot-conditions]
     steps:
       - name: Dependabot metadata
@@ -25,8 +26,13 @@ jobs:
 
       - name: Enable auto-merge for Dependabot PRs
         run: |
+          # Approve the PR first
           gh pr review --approve "$PR_URL"
-          gh pr merge --squash --auto "$PR_URL"
+
+          # Force the squash commit to use the PR title as the subject.
+          # This ensures the commit starts with "build(deps):"
+          gh pr merge --squash --auto --subject "$PR_TITLE" "$PR_URL"
         env:
-          PR_URL: ${{github.event.pull_request.html_url}}
-          GH_TOKEN: ${{secrets.WORKFLOW_TOKEN}}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
