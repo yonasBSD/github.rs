@@ -86,12 +86,12 @@ jobs:
       #    key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Install grcov
-        uses: taiki-e/install-action@a362280ea100b5bb920cf9040c038ce9a50c7943 # v2.67.16
+        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 # v2.67.18
         with:
           tool: grcov,cargo-llvm-cov
 
       - name: Run tests
-        uses: yonasBSD/toolkit@e3156a095eb4a759778ad8ef10dfd58dd00993e6 # v1.0.0
+        uses: yonasBSD/toolkit@7757e45441401d468ec049000c61571426a47de4 # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -99,7 +99,7 @@ jobs:
             task test
 
       - name: Generate test results and coverage report
-        uses: yonasBSD/toolkit@e3156a095eb4a759778ad8ef10dfd58dd00993e6 # v1.0.0
+        uses: yonasBSD/toolkit@7757e45441401d468ec049000c61571426a47de4 # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
