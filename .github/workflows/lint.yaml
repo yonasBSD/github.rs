@@ -49,7 +49,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
 
       - name: Cargo Format
-        uses: yonasBSD/toolkit@9067fa17c79d97c3bad28da5ebba1d3c32ab3582 # v0.1.0
+        uses: yonasBSD/toolkit@7757e45441401d468ec049000c61571426a47de4 # v0.1.0
         with:
           run: |
             cargo format --version
@@ -57,7 +57,7 @@ jobs:
             cargo format --check
 
       - name: Tree Format
-        uses: yonasBSD/toolkit@9067fa17c79d97c3bad28da5ebba1d3c32ab3582 # v0.1.0
+        uses: yonasBSD/toolkit@7757e45441401d468ec049000c61571426a47de4 # v0.1.0
         with:
           run: |
             treefmt
