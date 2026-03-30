@@ -122,7 +122,7 @@ jobs:
           files: ${{ github.workspace }}/codecov.json
 
       - name: Upload Codacy coverage report
-        uses: codacy/codacy-coverage-reporter-action@a38818475bb21847788496e9f0fddaa4e84955ba # v1.3.0
+        uses: codacy/codacy-coverage-reporter-action@6904bd01e29ada115135b5eca20125758ccae53b # v1.3.0
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           # or
