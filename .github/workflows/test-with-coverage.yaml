@@ -115,7 +115,7 @@ jobs:
           files: results.xml
 
       - name: Upload CodeCov coverage report
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
