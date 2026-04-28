@@ -33,7 +33,7 @@ jobs:
     if: github.event_name == 'issues' && (github.event.action == 'opened' || github.event.action == 'edited')
     steps:
       - name: Auto-label new issues
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const issueTitle = context.payload.issue.title.trim();
@@ -112,7 +112,7 @@ jobs:
     if: github.event_name == 'issues' && (github.event.action == 'labeled' || github.event.action == 'assigned' || github.event.action == 'unassigned' || github.event.action == 'closed')
     steps:
       - name: Remove needs-triage if triaged or closed
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const issue = context.payload.issue;
